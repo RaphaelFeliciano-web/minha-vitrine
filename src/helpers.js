@@ -37,13 +37,20 @@ const CATEGORY_KEYWORDS = {
 };
 
 export const identifyCategory = (title, desc, originalCat) => {
-  const fullText = (title + " " + (desc || "")).toLowerCase();
+  // Inclui a categoria original na busca para aumentar a precisão da identificação
+  const categoryToTest = originalCat ? String(originalCat).toLowerCase() : "";
+  const fullText = (title + " " + (desc || "") + " " + categoryToTest).toLowerCase();
 
   for (const [category, words] of Object.entries(CATEGORY_KEYWORDS)) {
-    // Otimização: removemos o toLowerCase() daqui, pois agora CATEGORY_KEYWORDS já deve ser tratada como estática
     if (words.some(word => fullText.includes(word))) {
       return category;
     }
+  }
+
+  // Se não encontrou palavra-chave mas existe uma categoria no CSV, mantém a original
+  // em vez de classificar como "Geral" automaticamente
+  if (originalCat && String(originalCat).trim().length > 1) {
+    return originalCat;
   }
   
   return "Geral";

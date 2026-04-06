@@ -47,7 +47,10 @@ export const Header = ({ searchTerm, setSearchTerm, onOpenAdmin, showPendingOnly
           </button>
         </div>
 
-        <button onClick={onOpenAdmin} className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl font-black text-xs uppercase flex items-center gap-2 shadow-xl hover:bg-slate-800 transition-all">
+        <button 
+          onClick={onOpenAdmin} 
+          className="bg-slate-900 text-white px-6 py-3.5 rounded-2xl font-black text-xs uppercase flex items-center gap-2 shadow-xl hover:bg-slate-800 transition-all focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+        >
           <Settings size={18} /> Painel de Gestão
         </button>
       </div>

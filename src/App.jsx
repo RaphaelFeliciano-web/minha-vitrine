@@ -2,6 +2,9 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Flame, ChevronLeft, ChevronRight, AlertCircle
 } from 'lucide-react';
+import { db, auth } from './firebase';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 
 import { ProductCard } from './componentes/ProductCard';
 import { Header } from './componentes/Header';
@@ -14,58 +17,46 @@ import { formatBRL, parsePrice, identifyCategory, parseCSVData } from './helpers
 // --- COMPONENTE PRINCIPAL ---
 
 export default function App() {
-  // States (Mantidos aqui para controle central)
-  const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem('vitrini_products');
-    const parsed = saved ? JSON.parse(saved) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  });
-  const [hotProducts, setHotProducts] = useState(() => {
-    const saved = localStorage.getItem('vitrini_hot_products');
-    const parsed = saved ? JSON.parse(saved) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  });
-
+  const [products, setProducts] = useState([]);
+  const [hotProducts, setHotProducts] = useState([]);
+  const [productConfigs, setProductConfigs] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [adminSearch, setAdminSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminTab, setAdminTab] = useState('geral');
   const [isProcessing, setIsProcessing] = useState(false);
   const [importType, setImportType] = useState('main'); 
-  const [importMode, setImportMode] = useState('append'); // 'append' ou 'replace'
+  const [importMode, setImportMode] = useState('append'); 
   const [importStatus, setImportStatus] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('Todas');
   const [expandedId, setExpandedId] = useState(null);
   const [showPendingOnly, setShowPendingOnly] = useState(false);
   const scrollRef = useRef(null);
 
-  const [productConfigs, setProductConfigs] = useState(() => {
-    const saved = localStorage.getItem('vitrini_v100_v8_aligned');
-    const parsed = saved ? JSON.parse(saved) : {};
-    return (parsed && typeof parsed === 'object') ? parsed : {};
-  });
+  // Efeito para sincronizar com o Firestore em Tempo Real
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      setIsAdminAuthenticated(!!user);
+    });
+    return () => unsubAuth();
+  }, []);
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      localStorage.setItem('vitrini_v100_v8_aligned', JSON.stringify(productConfigs));
-    }, 1000);
-    return () => clearTimeout(handler);
-  }, [productConfigs]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      localStorage.setItem('vitrini_products', JSON.stringify(products));
-    }, 1000);
-    return () => clearTimeout(handler);
-  }, [products]);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      localStorage.setItem('vitrini_hot_products', JSON.stringify(hotProducts));
-    }, 1000);
-    return () => clearTimeout(handler);
-  }, [hotProducts]);
+    const unsubProducts = onSnapshot(collection(db, "products"), (snap) => {
+      setProducts(snap.docs.map(doc => ({ ...doc.data(), uid: doc.id })));
+    });
+    const unsubHot = onSnapshot(collection(db, "hotProducts"), (snap) => {
+      setHotProducts(snap.docs.map(doc => ({ ...doc.data(), uid: doc.id })));
+    });
+    const unsubConfigs = onSnapshot(collection(db, "configs"), (snap) => {
+      const newConfigs = {};
+      snap.forEach(doc => newConfigs[doc.id] = doc.data());
+      setProductConfigs(newConfigs);
+    });
+    return () => { unsubProducts(); unsubHot(); unsubConfigs(); };
+  }, []);
 
   const parseCSV = (text) => {
     const { finalRows, map } = parseCSVData(text, importType);
@@ -95,28 +86,26 @@ export default function App() {
     return result;
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setIsProcessing(true);
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const data = parseCSV(event.target.result);
-
-        // Automação: Vincula links de afiliado presentes na planilha ao importar
-        const affiliateUpdates = data
-          .filter(item => item.affiliateLink)
-          .map(item => ({ uid: item.uid, field: 'affiliateLink', value: item.affiliateLink }));
+        const collectionName = importType === 'hot' ? 'hotProducts' : 'products';
         
-        if (affiliateUpdates.length > 0) bulkUpdateConfigs(affiliateUpdates);
-
-        if (importType === 'hot') {
-          setHotProducts(prev => importMode === 'replace' ? data : [...prev, ...data]);
-        } else { 
-          setProducts(prev => importMode === 'replace' ? data : [...prev, ...data]); 
-          setSelectedCategory('Todas'); 
-        }
+        const batch = writeBatch(db);
+        data.forEach(item => {
+          const docRef = doc(db, collectionName, item.uid);
+          batch.set(docRef, item);
+          // Se houver link de afiliado no CSV, já salva na config
+          if (item.affiliateLink) {
+            batch.set(doc(db, "configs", item.uid), { affiliateLink: item.affiliateLink }, { merge: true });
+          }
+        });
+        await batch.commit();
       } finally {
         setIsProcessing(false);
         setTimeout(() => { setIsModalOpen(false); setImportStatus(null); }, 1500);
@@ -125,11 +114,25 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const updateConfig = (uid, field, value) => {
-    setProductConfigs(prev => ({
-      ...prev,
-      [uid]: { ...(prev[uid] || {}), [field]: value }
-    }));
+  const updateConfig = async (uid, field, value) => {
+    await setDoc(doc(db, "configs", uid), { [field]: value }, { merge: true });
+  };
+
+  const handleOpenAdmin = async () => {
+    if (isAdminAuthenticated) {
+      setIsAdminOpen(true);
+      return;
+    }
+    
+    const email = prompt("E-mail do Administrador:");
+    const password = prompt("Senha:");
+    
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      setIsAdminOpen(true);
+    } catch (error) {
+      alert("Senha incorreta!");
+    }
   };
 
   const bulkUpdateConfigs = (updates) => {
@@ -217,7 +220,7 @@ export default function App() {
       <Header 
         searchTerm={searchTerm} 
         setSearchTerm={setSearchTerm} 
-        onOpenAdmin={() => setIsAdminOpen(true)} 
+        onOpenAdmin={handleOpenAdmin} 
         showPendingOnly={showPendingOnly}
         setShowPendingOnly={setShowPendingOnly}
       />
