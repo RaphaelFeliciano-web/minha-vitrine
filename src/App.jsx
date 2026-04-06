@@ -220,6 +220,7 @@ export default function App() {
     return products.filter(p => {
       const config = productConfigs[p.uid];
       const isActive = config?.isActive !== false;
+      const isApproved = config?.isApproved === true;
       const hasAffiliateLink = !!config?.affiliateLink;
       const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = selectedCategory === 'Todas' || p.category === selectedCategory;
@@ -228,7 +229,7 @@ export default function App() {
       // Se showPendingOnly estiver ON, mostra apenas os que NÃO tem link.
       const matchesLinkStatus = showPendingOnly ? !hasAffiliateLink : hasAffiliateLink;
 
-      return isActive && matchesSearch && matchesCategory && matchesLinkStatus;
+      return isActive && isApproved && matchesSearch && matchesCategory && matchesLinkStatus;
     });
   }, [products, searchTerm, selectedCategory, productConfigs, showPendingOnly]);
 

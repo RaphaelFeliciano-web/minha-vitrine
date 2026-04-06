@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Flame, UploadCloud, Search, Power, Trash2, ExternalLink, Filter, Download, Copy, ClipboardCheck, CircleHelp, Sparkles, Eraser, Database, History, LayoutGrid } from 'lucide-react';
+import { X, Flame, UploadCloud, Search, Power, Trash2, ExternalLink, Filter, Download, Copy, ClipboardCheck, CircleHelp, Sparkles, Eraser, Database, History, LayoutGrid, CheckCircle2 } from 'lucide-react';
 
 export const AdminPanel = ({ 
   isOpen, 
@@ -407,7 +407,14 @@ export const AdminPanel = ({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{p.category}</span>
-                          <button onClick={() => updateConfig(p.uid, 'isActive', productConfigs[p.uid]?.isActive === false)} className={`p-1.5 rounded-lg transition-all ${productConfigs[p.uid]?.isActive !== false ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-400'}`}><Power size={12}/></button>
+                          <div className="flex gap-1">
+                            <button 
+                              onClick={() => updateConfig(p.uid, 'isApproved', productConfigs[p.uid]?.isApproved !== true)} 
+                              className={`p-1.5 rounded-lg transition-all ${productConfigs[p.uid]?.isApproved ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-300 hover:text-green-600'}`}
+                              title="Aprovar para Vitrine"
+                            ><CheckCircle2 size={12}/></button>
+                            <button onClick={() => updateConfig(p.uid, 'isActive', productConfigs[p.uid]?.isActive === false)} className={`p-1.5 rounded-lg transition-all ${productConfigs[p.uid]?.isActive !== false ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-400'}`}><Power size={12}/></button>
+                          </div>
                         </div>
                         <input type="text" className="w-full bg-transparent border-none p-0 text-[11px] font-black uppercase outline-none" value={productConfigs[p.uid]?.customTitle || p.title} onChange={(e) => { updateConfig(p.uid, 'customTitle', e.target.value); addToRecent(p.uid); }} />
                       </div>
