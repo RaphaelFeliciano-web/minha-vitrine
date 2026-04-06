@@ -38,7 +38,9 @@ export default function App() {
   // Efeito para sincronizar com o Firestore em Tempo Real
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (user) => {
-      setIsAdminAuthenticated(!!user);
+      // Verifica se o usuário existe e se o UID é o mesmo definido no .env
+      const isMasterAdmin = !!user && user.uid === import.meta.env.VITE_ADMIN_UID;
+      setIsAdminAuthenticated(isMasterAdmin);
     });
     return () => unsubAuth();
   }, []);
@@ -124,7 +126,7 @@ export default function App() {
       return;
     }
     
-    const email = prompt("E-mail do Administrador:");
+    const email = prompt("E-mail do Administrador:", import.meta.env.VITE_ADMIN_LOGIN || "");
     if (!email) return;
     const password = prompt("Senha:");
     if (!password) return;
