@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { db, auth } from './firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 import { ProductCard } from './componentes/ProductCard';
 import { Header } from './componentes/Header';
@@ -125,14 +125,27 @@ export default function App() {
     }
     
     const email = prompt("E-mail do Administrador:");
+    if (!email) return;
     const password = prompt("Senha:");
+    if (!password) return;
     
     try {
       await signInWithEmailAndPassword(auth, email, password);
       setIsAdminOpen(true);
     } catch (error) {
-      alert("Senha incorreta!");
+      console.error("Erro de login:", error.code);
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        alert("Login ou senha incorretos! Verifique se você criou o usuário na aba 'Authentication' do Firebase.");
+      } else {
+        alert("Erro ao tentar fazer login. Verifique sua conexão ou as configurações do Firebase.");
+      }
     }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setIsAdminOpen(false);
+    alert("Você saiu do painel administrativo.");
   };
 
   const bulkUpdateConfigs = (updates) => {
