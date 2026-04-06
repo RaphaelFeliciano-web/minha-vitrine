@@ -230,7 +230,7 @@ export default function App() {
       const matchesLinkStatus = showPendingOnly ? !hasAffiliateLink : hasAffiliateLink;
 
       return isActive && isApproved && matchesSearch && matchesCategory && matchesLinkStatus;
-    });
+    }).slice(0, 100); // Garante o limite de 100 na exibição
   }, [products, searchTerm, selectedCategory, productConfigs, showPendingOnly]);
 
   return (

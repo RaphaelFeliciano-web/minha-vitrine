@@ -67,8 +67,8 @@ export const parseCSVData = (text, importType) => {
 
   const headers = rows[0].map(h => h.toLowerCase().trim());
   const dataRows = rows.slice(1).filter(r => r.length > 1);
-  // Removido o limite de 150 para permitir importações maiores
-  const finalRows = dataRows; 
+  // Limite estrito de 100 itens para a Vitrine Geral, sem limite para Seleção Hot
+  const finalRows = importType === 'main' ? dataRows.slice(0, 100) : dataRows; 
   const findIdx = (names) => names.reduce((acc, name) => acc !== -1 ? acc : headers.indexOf(name), -1);
 
   const map = {
