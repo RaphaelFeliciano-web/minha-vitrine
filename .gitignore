@@ -1,0 +1,13 @@
+# dependencias
+node_modules
+
+# build
+dist
+
+# local env files
+.env
+.env.local
+
+# logs
+npm-debug.log*
+.eslintcache
