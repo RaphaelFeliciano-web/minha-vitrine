@@ -97,8 +97,17 @@ export default function App() {
       try {
         const data = parseCSV(event.target.result);
         const collectionName = importType === 'hot' ? 'hotProducts' : 'products';
+        const currentList = importType === 'hot' ? hotProducts : products;
         
         const batch = writeBatch(db);
+
+        // Se o modo for 'replace', removemos os itens atuais do banco antes de adicionar
+        if (importMode === 'replace') {
+          currentList.forEach(item => {
+            batch.delete(doc(db, collectionName, item.uid));
+          });
+        }
+
         data.forEach(item => {
           const docRef = doc(db, collectionName, item.uid);
           batch.set(docRef, item);
@@ -150,14 +159,13 @@ export default function App() {
     alert("Você saiu do painel administrativo.");
   };
 
-  const bulkUpdateConfigs = (updates) => {
-    setProductConfigs(prev => {
-      const next = { ...prev };
-      updates.forEach(({ uid, field, value }) => {
-        next[uid] = { ...(next[uid] || {}), [field]: value };
-      });
-      return next;
+  const bulkUpdateConfigs = async (updates) => {
+    const batch = writeBatch(db);
+    updates.forEach(({ uid, field, value }) => {
+      const docRef = doc(db, "configs", uid);
+      batch.set(docRef, { [field]: value }, { merge: true });
     });
+    await batch.commit();
   };
 
   const purgeDeactivated = async () => {
