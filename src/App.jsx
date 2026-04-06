@@ -145,37 +145,31 @@ export default function App() {
     });
   };
 
-  const purgeDeactivated = () => {
+  const purgeDeactivated = async () => {
     if (!window.confirm("Deseja excluir permanentemente todos os produtos desativados? Esta ação não pode ser desfeita.")) return;
 
-    const isActive = (uid) => productConfigs[uid]?.isActive !== false;
-    const newProducts = products.filter(p => isActive(p.uid));
-    const newHotProducts = hotProducts.filter(p => isActive(p.uid));
-
-    setProducts(newProducts);
-    setHotProducts(newHotProducts);
-
-    // Limpa as configurações órfãs do localStorage
-    setProductConfigs(prev => {
-      const next = { ...prev };
-      const activeUids = new Set([...newProducts.map(p => p.uid), ...newHotProducts.map(p => p.uid)]);
-      Object.keys(next).forEach(uid => {
-        if (!activeUids.has(uid)) delete next[uid];
-      });
-      return next;
+    const batch = writeBatch(db);
+    [...products, ...hotProducts].forEach(p => {
+      if (productConfigs[p.uid]?.isActive === false) {
+        const collectionName = p.uid.startsWith('hot') ? 'hotProducts' : 'products';
+        batch.delete(doc(db, collectionName, p.uid));
+        batch.delete(doc(db, "configs", p.uid));
+      }
     });
+    await batch.commit();
   };
 
-  const clearAllData = () => {
-    if (!window.confirm("⚠️ ATENÇÃO: Isso apagará TODOS os produtos, links de afiliado e customizações salvos localmente. Esta ação não pode ser desfeita. Deseja continuar?")) return;
-    localStorage.clear(); // Limpeza total garantida
+  const clearAllData = async () => {
+    if (!window.confirm("⚠️ ATENÇÃO: Isso apagará TODOS os produtos e configurações do BANCO DE DADOS. Esta ação não pode ser desfeita. Deseja continuar?")) return;
     
-    setProducts([]);
-    setHotProducts([]);
-    setProductConfigs({});
+    const batch = writeBatch(db);
+    products.forEach(p => batch.delete(doc(db, "products", p.uid)));
+    hotProducts.forEach(p => batch.delete(doc(db, "hotProducts", p.uid)));
+    Object.keys(productConfigs).forEach(uid => batch.delete(doc(db, "configs", uid)));
+    
+    await batch.commit();
     setSelectedCategory('Todas');
     setShowPendingOnly(false);
-    
   };
 
   const categoryData = useMemo(() => {
