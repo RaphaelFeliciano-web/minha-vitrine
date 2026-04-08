@@ -111,29 +111,28 @@ export default function App() {
         const collectionName = importType === 'hot' ? 'hotProducts' : 'products';
 
         if (importMode === 'replace') {
-          const { error: delError } = await supabase.from(collectionName).delete().neq('uid', '0');
-          if (delError) throw delError;
+          await supabase.from(collectionName).delete().neq('uid', '0');
         }
 
         // Supabase lida com bulk insert/upsert de forma nativa e eficiente
-        const { error: upsertError } = await supabase.from(collectionName).upsert(data);
-        if (upsertError) throw upsertError;
+        await supabase.from(collectionName).upsert(data);
         
         const configs = data.map(item => ({
           uid: item.uid,
           isApproved: false,
           isActive: true,
-          affiliateLink: item.affiliateLink || null
+          affiliateLink: item.affiliateLink || ""
         }));
         
-        const { error: cfgError } = await supabase.from('configs').upsert(configs);
-        if (cfgError) throw cfgError;
+        await supabase.from('configs').upsert(configs);
+
       } catch (error) {
         console.error("Erro ao salvar no Supabase:", error);
-        alert(`Erro técnico: ${error.message || "Não foi possível conectar ao banco."}\n\nVerifique se as tabelas existem e se o RLS permite a gravação.`);
+        alert(`Falha ao salvar os produtos: ${error.message || "Verifique as permissões de escrita no Supabase."}`);
         setImportStatus(null); // Remove a tela de "Pronto" caso dê erro
       } finally {
         setIsProcessing(false);
+        setTimeout(() => { setIsModalOpen(false); setImportStatus(null); }, 1500);
       }
     };
     reader.readAsText(file);
@@ -156,10 +155,6 @@ export default function App() {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      
-      // Debug temporário: Verifique se o UID da Vercel coincide com o do usuário logado
-      console.log("Usuário logado ID:", data.user.id);
-      console.log("UID Esperado (ENV):", import.meta.env.VITE_ADMIN_UID);
 
       // Validação do UID de administrador
       if (data.user.id === import.meta.env.VITE_ADMIN_UID) {
@@ -377,10 +372,7 @@ export default function App() {
 
       <ImportModal 
         isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setImportStatus(null);
-        }}
+        onClose={() => setIsModalOpen(false)}
         importStatus={importStatus}
         importType={importType}
         setImportType={setImportType}
