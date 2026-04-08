@@ -47,10 +47,15 @@ export default function App() {
 
     // Busca inicial e Realtime
     const fetchData = async () => {
-      const { data: p } = await supabase.from('products').select('*');
-      const { data: h } = await supabase.from('hotProducts').select('*');
-      const { data: c } = await supabase.from('configs').select('*');
+      const { data: p, error: errP } = await supabase.from('products').select('*');
+      const { data: h, error: errH } = await supabase.from('hotProducts').select('*');
+      const { data: c, error: errC } = await supabase.from('configs').select('*');
       
+      if (errP || errH || errC) {
+        console.error("Erro ao carregar dados do Supabase:", { products: errP, hot: errH, configs: errC });
+        return;
+      }
+
       if (p) setProducts(p);
       if (h) setHotProducts(h);
       if (c) {
