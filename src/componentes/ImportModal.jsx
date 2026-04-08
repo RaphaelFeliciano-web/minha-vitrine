@@ -1,12 +1,16 @@
 import React from 'react';
-import { CheckCircle2, Database, UploadCloud } from 'lucide-react';
+import { CheckCircle2, Database, UploadCloud, X } from 'lucide-react';
 
 export const ImportModal = ({ isOpen, onClose, importStatus, importType, setImportType, importMode, setImportMode, isProcessing, handleFileUpload }) => {
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
-      <div className="bg-white w-full max-w-lg max-h-[95vh] overflow-y-auto rounded-[2.5rem] md:rounded-[4rem] shadow-2xl p-8 md:p-12 text-center custom-scrollbar">
+      <div className="bg-white w-full max-w-lg max-h-[95vh] overflow-y-auto rounded-[2.5rem] md:rounded-[4rem] shadow-2xl p-8 md:p-12 text-center custom-scrollbar relative">
+        <button onClick={onClose} className="absolute top-8 right-8 text-slate-300 hover:text-slate-900 transition-colors">
+          <X size={24} />
+        </button>
+
         {importStatus ? (
           <div className="py-10">
             <div className="w-20 h-20 rounded-full bg-green-100 text-green-500 flex items-center justify-center mx-auto mb-6">
@@ -16,6 +20,12 @@ export const ImportModal = ({ isOpen, onClose, importStatus, importType, setImpo
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
               {importStatus.count} novos itens em {importStatus.type}
             </p>
+            <button 
+              onClick={onClose}
+              className="mt-8 bg-slate-900 text-white px-8 py-3 rounded-xl font-black text-[10px] uppercase shadow-xl hover:bg-black transition-all"
+            >
+              Concluído
+            </button>
           </div>
         ) : (
           <>

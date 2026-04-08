@@ -2,14 +2,13 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Flame, ChevronLeft, ChevronRight, AlertCircle
 } from 'lucide-react';
-import { db, auth } from './firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { supabase } from './supabase';
 
 import { ProductCard } from './componentes/ProductCard';
 import { Header } from './componentes/Header';
 import { AdminPanel } from './componentes/AdminPanel';
 import { ImportModal } from './componentes/ImportModal';
+import { LoginModal } from './componentes/LoginModal';
 import { HotProductCard } from './componentes/HotProductCard'; // Novo componente
 import { CategoryIcon } from './componentes/CategoryIcon';
 import { formatBRL, parsePrice, identifyCategory, parseCSVData } from './helpers';
@@ -23,6 +22,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [adminSearch, setAdminSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminTab, setAdminTab] = useState('geral');
@@ -35,29 +35,41 @@ export default function App() {
   const [showPendingOnly, setShowPendingOnly] = useState(false);
   const scrollRef = useRef(null);
 
-  // Efeito para sincronizar com o Firestore em Tempo Real
   useEffect(() => {
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      // Verifica se o usuário existe e se o UID é o mesmo definido no .env
-      const isMasterAdmin = !!user && user.uid === import.meta.env.VITE_ADMIN_UID;
-      setIsAdminAuthenticated(isMasterAdmin);
+    // Auth do Supabase
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsAdminAuthenticated(!!session && session.user.id === import.meta.env.VITE_ADMIN_UID);
     });
-    return () => unsubAuth();
-  }, []);
 
-  useEffect(() => {
-    const unsubProducts = onSnapshot(collection(db, "products"), (snap) => {
-      setProducts(snap.docs.map(doc => ({ ...doc.data(), uid: doc.id })));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAdminAuthenticated(!!session && session.user.id === import.meta.env.VITE_ADMIN_UID);
     });
-    const unsubHot = onSnapshot(collection(db, "hotProducts"), (snap) => {
-      setHotProducts(snap.docs.map(doc => ({ ...doc.data(), uid: doc.id })));
-    });
-    const unsubConfigs = onSnapshot(collection(db, "configs"), (snap) => {
-      const newConfigs = {};
-      snap.forEach(doc => newConfigs[doc.id] = doc.data());
-      setProductConfigs(newConfigs);
-    });
-    return () => { unsubProducts(); unsubHot(); unsubConfigs(); };
+
+    // Busca inicial e Realtime
+    const fetchData = async () => {
+      const { data: p } = await supabase.from('products').select('*');
+      const { data: h } = await supabase.from('hotProducts').select('*');
+      const { data: c } = await supabase.from('configs').select('*');
+      
+      if (p) setProducts(p);
+      if (h) setHotProducts(h);
+      if (c) {
+        const cfgMap = {};
+        c.forEach(i => cfgMap[i.uid] = i);
+        setProductConfigs(cfgMap);
+      }
+    };
+
+    fetchData();
+
+    const channel = supabase.channel('db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => fetchData())
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const parseCSV = (text) => {
@@ -97,100 +109,108 @@ export default function App() {
       try {
         const data = parseCSV(event.target.result);
         const collectionName = importType === 'hot' ? 'hotProducts' : 'products';
-        const currentList = importType === 'hot' ? hotProducts : products;
-        
-        const batch = writeBatch(db);
 
-        // Se o modo for 'replace', removemos os itens atuais do banco antes de adicionar
         if (importMode === 'replace') {
-          currentList.forEach(item => {
-            batch.delete(doc(db, collectionName, item.uid));
-          });
+          await supabase.from(collectionName).delete().neq('uid', '0');
         }
 
-        data.forEach(item => {
-          const docRef = doc(db, collectionName, item.uid);
-          batch.set(docRef, item);
-          // Se houver link de afiliado no CSV, já salva na config
-          if (item.affiliateLink) {
-            batch.set(doc(db, "configs", item.uid), { affiliateLink: item.affiliateLink }, { merge: true });
-          }
-        });
-        await batch.commit();
+        // Supabase lida com bulk insert/upsert de forma nativa e eficiente
+        await supabase.from(collectionName).upsert(data);
+        
+        const configs = data.map(item => ({
+          uid: item.uid,
+          isApproved: false,
+          isActive: true,
+          affiliateLink: item.affiliateLink || ""
+        }));
+        
+        await supabase.from('configs').upsert(configs);
+
+      } catch (error) {
+        console.error("Erro ao salvar no Supabase:", error);
+        alert(`Falha ao salvar os produtos: ${error.message || "Verifique as permissões de escrita no Supabase."}`);
+        setImportStatus(null); // Remove a tela de "Pronto" caso dê erro
       } finally {
         setIsProcessing(false);
-        setTimeout(() => { setIsModalOpen(false); setImportStatus(null); }, 1500);
       }
     };
     reader.readAsText(file);
   };
 
   const updateConfig = async (uid, field, value) => {
-    await setDoc(doc(db, "configs", uid), { [field]: value }, { merge: true });
+    await supabase.from('configs').upsert({ uid, [field]: value });
   };
 
-  const handleOpenAdmin = async () => {
+  const handleOpenAdmin = () => {
     if (isAdminAuthenticated) {
       setIsAdminOpen(true);
-      return;
+    } else {
+      setIsLoginModalOpen(true);
     }
-    
-    const email = prompt("E-mail do Administrador:", import.meta.env.VITE_ADMIN_LOGIN || "");
-    if (!email) return;
-    const password = prompt("Senha:");
-    if (!password) return;
-    
+  };
+
+  const handleLoginSubmit = async (email, password) => {
+    setIsProcessing(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setIsAdminOpen(true);
-    } catch (error) {
-      console.error("Erro de login:", error.code);
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        alert("Login ou senha incorretos! Verifique se você criou o usuário na aba 'Authentication' do Firebase.");
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      
+      // Debug temporário: Verifique se o UID da Vercel coincide com o do usuário logado
+      console.log("Usuário logado ID:", data.user.id);
+      console.log("UID Esperado (ENV):", import.meta.env.VITE_ADMIN_UID);
+
+      // Validação do UID de administrador
+      if (data.user.id === import.meta.env.VITE_ADMIN_UID) {
+        setIsAdminAuthenticated(true);
+        setIsAdminOpen(true);
+        setIsLoginModalOpen(false);
       } else {
-        alert("Erro ao tentar fazer login. Verifique sua conexão ou as configurações do Firebase.");
+        await supabase.auth.signOut();
+        alert("Acesso negado: Este usuário não tem permissões de administrador.");
       }
+    } catch (error) {
+      console.error("Erro de login:", error);
+      const message = error.message === "Invalid login credentials"
+        ? "E-mail ou senha incorretos no Supabase."
+        : error.message;
+      alert(`Erro de autenticação: ${message}`);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
     setIsAdminOpen(false);
     alert("Você saiu do painel administrativo.");
   };
 
   const bulkUpdateConfigs = async (updates) => {
-    const batch = writeBatch(db);
-    updates.forEach(({ uid, field, value }) => {
-      const docRef = doc(db, "configs", uid);
-      batch.set(docRef, { [field]: value }, { merge: true });
-    });
-    await batch.commit();
+    const formattedUpdates = updates.map(u => ({
+      uid: u.uid,
+      [u.field]: u.value
+    }));
+    await supabase.from('configs').upsert(formattedUpdates);
   };
 
   const purgeDeactivated = async () => {
     if (!window.confirm("Deseja excluir permanentemente todos os produtos desativados? Esta ação não pode ser desfeita.")) return;
+    
+    const toDelete = Object.keys(productConfigs).filter(uid => productConfigs[uid].isActive === false);
+    if (toDelete.length === 0) return;
 
-    const batch = writeBatch(db);
-    [...products, ...hotProducts].forEach(p => {
-      if (productConfigs[p.uid]?.isActive === false) {
-        const collectionName = p.uid.startsWith('hot') ? 'hotProducts' : 'products';
-        batch.delete(doc(db, collectionName, p.uid));
-        batch.delete(doc(db, "configs", p.uid));
-      }
-    });
-    await batch.commit();
+    await supabase.from('products').delete().in('uid', toDelete);
+    await supabase.from('hotProducts').delete().in('uid', toDelete);
+    await supabase.from('configs').delete().in('uid', toDelete);
   };
 
   const clearAllData = async () => {
     if (!window.confirm("⚠️ ATENÇÃO: Isso apagará TODOS os produtos e configurações do BANCO DE DADOS. Esta ação não pode ser desfeita. Deseja continuar?")) return;
-    
-    const batch = writeBatch(db);
-    products.forEach(p => batch.delete(doc(db, "products", p.uid)));
-    hotProducts.forEach(p => batch.delete(doc(db, "hotProducts", p.uid)));
-    Object.keys(productConfigs).forEach(uid => batch.delete(doc(db, "configs", uid)));
-    
-    await batch.commit();
+
+    await supabase.from('products').delete().neq('uid', '0');
+    await supabase.from('hotProducts').delete().neq('uid', '0');
+    await supabase.from('configs').delete().neq('uid', '0');
+
     setSelectedCategory('Todas');
     setShowPendingOnly(false);
   };
@@ -346,9 +366,19 @@ export default function App() {
         onOpenImport={() => setIsModalOpen(true)}
       />
 
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+        onLogin={handleLoginSubmit}
+        isProcessing={isProcessing}
+      />
+
       <ImportModal 
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setImportStatus(null);
+        }}
         importStatus={importStatus}
         importType={importType}
         setImportType={setImportType}
