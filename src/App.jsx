@@ -111,24 +111,26 @@ export default function App() {
         const collectionName = importType === 'hot' ? 'hotProducts' : 'products';
 
         if (importMode === 'replace') {
-          await supabase.from(collectionName).delete().neq('uid', '0');
+          const { error: delError } = await supabase.from(collectionName).delete().neq('uid', '0');
+          if (delError) throw delError;
         }
 
         // Supabase lida com bulk insert/upsert de forma nativa e eficiente
-        await supabase.from(collectionName).upsert(data);
+        const { error: upsertError } = await supabase.from(collectionName).upsert(data);
+        if (upsertError) throw upsertError;
         
         const configs = data.map(item => ({
           uid: item.uid,
           isApproved: false,
           isActive: true,
-          affiliateLink: item.affiliateLink || ""
+          affiliateLink: item.affiliateLink || null
         }));
         
-        await supabase.from('configs').upsert(configs);
-
+        const { error: cfgError } = await supabase.from('configs').upsert(configs);
+        if (cfgError) throw cfgError;
       } catch (error) {
         console.error("Erro ao salvar no Supabase:", error);
-        alert(`Falha ao salvar os produtos: ${error.message || "Verifique as permissões de escrita no Supabase."}`);
+        alert(`Erro técnico: ${error.message || "Não foi possível conectar ao banco."}\n\nVerifique se as tabelas existem e se o RLS permite a gravação.`);
         setImportStatus(null); // Remove a tela de "Pronto" caso dê erro
       } finally {
         setIsProcessing(false);
